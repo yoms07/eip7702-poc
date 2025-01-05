@@ -112,16 +112,19 @@ export function WalletInfo({
           {showCode && (
             <div className="space-y-1">
               <div className="text-sm font-medium text-gray-700">Code:</div>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="font-mono text-gray-900 text-lg bg-slate-500 px-1 py-1 bg-opacity-55 rounded-sm cursor-pointer">
-                    {code.slice(0, 8)}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Delegation Destination Marker</p>
-                </TooltipContent>
-              </Tooltip>
+              {code.length > 8 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="font-mono text-gray-900 text-lg bg-slate-500 px-1 py-1 bg-opacity-55 rounded-sm cursor-pointer">
+                      {code.slice(0, 8)}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Delegation Destination Marker</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+
               <span className="font-mono text-gray-900 text-lg">
                 {code.slice(8)}
               </span>
