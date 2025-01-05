@@ -8,6 +8,7 @@ import {
   http,
   isAddress,
   parseEther,
+  parseUnits,
 } from "viem";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { anvil, blastSepolia } from "viem/chains";
@@ -15,10 +16,12 @@ import { eip7702Actions } from "viem/experimental";
 import * as ethers from "ethers";
 
 import erc20ABI from "../abis/erc20.json";
+import batchCallABI from "../abis/batchCallDelegation.json";
 
 dotenv.config();
 
 const app: Express = express();
+app.use(express.json());
 const port = process.env.PORT || 3000;
 const sponsorPrivateKey: `0x${string}` = ("0x" +
   process.env.PRIVATE_KEY) as `0x${string}`;
@@ -114,7 +117,6 @@ const main = async () => {
         address: sponsorWalletClient.account.address,
       })
     );
-    console.log(availableAddresses);
     const addressesEthBalance = await Promise.all(
       availableAddresses.map(async (address) => {
         const balance = await publicClient.getBalance({ address });
@@ -143,6 +145,12 @@ const main = async () => {
       })
     );
     res.json({
+      walletAddress: walletClient.account.address,
+      sponsorAddress: sponsorWalletClient.account.address,
+
+      token01Address: token01Address,
+      token02Address: token02Address,
+
       walletEthBalance,
       sponsorEthBalance,
       addressesEthBalance,
@@ -158,6 +166,84 @@ const main = async () => {
       availableAddresses,
     });
     return;
+  });
+
+  app.post("/transaction", async (req: Request, res: Response) => {
+    /**
+     * {
+     *  isSponsored: true,
+     *  transactions: [
+     *    {
+     *      "type": "sendToken",
+     *      "tokenAddress": "0x...."
+     *      "to": "0x....",
+     *      "amount": "10000...."
+     *    }
+     *  ]
+     * }
+     */
+    const { isSponsored, transactions } = req.body;
+
+    const data = encodeFunctionData({
+      abi: batchCallABI,
+      functionName: "execute",
+      args: [
+        transactions.map((tx: any) => {
+          const data = encodeFunctionData({
+            abi: erc20ABI,
+            functionName: "transfer",
+            args: [tx.to, tx.amount],
+          });
+          return {
+            to: tx.tokenAddress,
+            value: tx.value,
+            data: data,
+          };
+        }),
+      ],
+    });
+
+    const authorization = await walletClient.signAuthorization({
+      contractAddress: batchCallDelegationAddress,
+    });
+
+    const executor = isSponsored ? sponsorWalletClient : walletClient;
+    const txHash = await executor.sendTransaction({
+      to: walletClient.account.address,
+      data,
+      authorizationList: [authorization],
+    });
+    res.json({ txHash });
+  });
+
+  app.post("/requestETH", async (req: Request, res: Response) => {
+    const { amount } = req.body;
+    const ethAmount = BigInt(amount);
+    console.info(
+      `[INFO] Sending wallet eth: ${ethAmount} to ${walletClient.account.address}`
+    );
+    let txHash = await sponsorWalletClient.sendTransaction({
+      to: walletClient.account.address,
+      value: ethAmount,
+    });
+    console.info(`[INFO] Success Sending wallet eth: ${txHash}`);
+    res.status(200).send("OK");
+  });
+
+  app.post("/receipt", async (req: Request, res: Response) => {
+    const { txHash } = req.body;
+    const receipt = await publicClient.getTransactionReceipt({ hash: txHash });
+
+    // Stringify the receipt with handling for BigInt and other special cases
+    const stringify = (data: any) => {
+      return JSON.stringify(
+        data,
+        (_, value) => (typeof value === "bigint" ? value.toString() : value) // Convert BigInt to string
+      );
+    };
+
+    const receiptString = stringify(receipt);
+    res.setHeader("Content-Type", "application/json").send(receiptString);
   });
 
   app.listen(port, () => {
